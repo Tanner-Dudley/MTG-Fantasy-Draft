@@ -7,29 +7,65 @@ SCRYFALL_SEARCH_URL = "https://api.scryfall.com/cards/search"
 CARDS_PER_ROW = 4
 
 # Import pure logic (no Streamlit) so test_logic.py can import it without side effects
-from draft_logic import IDENTITY_MAP, get_diverse_pool
+from draft_logic import IDENTITY_MAP, get_diverse_pool, get_edhrec_tags
 
 # --- CSS ---
 st.markdown("""
     <style>
     /* Clean, flat design */
-    img {
-        width: 100%;
-        height: auto;
-        border-radius: 4.5%;
-        margin-bottom: 5px;
-    }
     .stButton button {
         width: 100%;
     }
     header {visibility: hidden;}
-    
+
     /* REMOVE CHAIN LINKS (Anchor Icons) */
     [data-testid="stHeader"] a, 
     [data-testid="stMarkdownContainer"] h1 a, 
     [data-testid="stMarkdownContainer"] h2 a, 
     [data-testid="stMarkdownContainer"] h3 a {
         display: none !important;
+    }
+
+    /* EDHREC TAG OVERLAY */
+    .card-wrapper {
+        position: relative;
+        display: block;
+        width: 100%;
+    }
+    .card-wrapper img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 4.5%;
+        margin-bottom: 5px;
+    }
+    .tag-overlay {
+        position: absolute;
+        bottom: 10px;
+        left: 0;
+        right: 0;
+        background: rgba(0, 0, 0, 0.82);
+        color: #f0f0f0;
+        font-size: 11px;
+        font-weight: 500;
+        text-align: center;
+        padding: 5px 4px;
+        border-radius: 0 0 4.5% 4.5%;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        pointer-events: none;
+        letter-spacing: 0.3px;
+    }
+    .card-wrapper:hover .tag-overlay {
+        opacity: 1;
+    }
+    .tag-title {
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #aaa;
+        display: block;
+        margin-bottom: 3px;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -75,6 +111,13 @@ def get_full_commander_database():
             
     progress_text.empty()
     return all_cards
+
+
+# --- API: FETCH EDHREC TAGS ---
+@st.cache_data(show_spinner=False)
+def fetch_tags_cached(card_name):
+    """Cached wrapper so each commander is only looked up once per session."""
+    return get_edhrec_tags(card_name)
 
 
 # --- INITIALIZE STATE ---
@@ -278,10 +321,29 @@ else:
                         
                         with cols[col_idx]:
                             opacity = 0.2 if drafted else 1.0
-                            st.markdown(
-                                f'<img src="{image_url}" style="opacity:{opacity};">', 
-                                unsafe_allow_html=True
-                            )
+
+                            if not drafted:
+                                tags = fetch_tags_cached(card['name'])
+                                if tags:
+                                    tag_html = " &nbsp;·&nbsp; ".join(tags)
+                                    tag_block = f'<span class="tag-title">Top Archetypes</span>{tag_html}'
+                                else:
+                                    tag_block = "No EDHRec data"
+                                st.markdown(
+                                    f'''
+                                    <div class="card-wrapper">
+                                        <img src="{image_url}" style="opacity:{opacity};">
+                                        <div class="tag-overlay">{tag_block}</div>
+                                    </div>
+                                    ''',
+                                    unsafe_allow_html=True
+                                )
+                            else:
+                                st.markdown(
+                                    f'<img src="{image_url}" style="opacity:{opacity};">',
+                                    unsafe_allow_html=True
+                                )
+
                             st.button("Draft", key=f"btn_{card['id']}", disabled=drafted, on_click=handle_draft, args=(card,), use_container_width=True)
 
             # --- REFRESH BUTTON ---
@@ -340,3 +402,4 @@ else:
             st.session_state.turn_index = 0
             st.session_state.direction = 1
             st.rerun()
+
