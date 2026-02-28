@@ -7,6 +7,19 @@ import time
 SCRYFALL_SEARCH_URL = "https://api.scryfall.com/cards/search"
 CARDS_PER_ROW = 4
 
+# --- COLOR IDENTITY MAPPING ---
+# Maps colloquial names to exact Scryfall color identity sets
+IDENTITY_MAP = {
+    'Azorius': {'W', 'U'}, 'Orzhov': {'W', 'B'}, 'Dimir': {'U', 'B'}, 'Izzet': {'U', 'R'}, 
+    'Rakdos': {'B', 'R'}, 'Golgari': {'B', 'G'}, 'Gruul': {'R', 'G'}, 'Boros': {'R', 'W'}, 
+    'Selesnya': {'G', 'W'}, 'Simic': {'G', 'U'},
+    'Bant': {'G', 'W', 'U'}, 'Mardu': {'W', 'B', 'R'}, 'Esper': {'W', 'U', 'B'}, 
+    'Temur': {'U', 'R', 'G'}, 'Grixis': {'U', 'B', 'R'}, 'Abzan': {'W', 'B', 'G'}, 
+    'Jund': {'B', 'R', 'G'}, 'Jeskai': {'U', 'R', 'W'}, 'Naya': {'R', 'G', 'W'}, 
+    'Sultai': {'B', 'G', 'U'},
+    'WUBRG': {'W', 'U', 'B', 'R', 'G'}
+}
+
 # --- CSS ---
 st.markdown("""
     <style>
@@ -44,7 +57,6 @@ def get_image_uri(card):
 @st.cache_data(show_spinner=False)
 def get_full_commander_database():
     all_cards = []
-    # Updated Query: 'is:commander' ensures the card is legally able to be a commander
     query_params = {
         "q": "is:commander f:commander game:paper",
         "unique": "cards",
@@ -76,26 +88,36 @@ def get_full_commander_database():
     return all_cards
 
 # --- LOGIC: GENERATE POOL ---
-def get_diverse_pool(db, count, prevent_dupes, exclusions):
+def get_diverse_pool(db, count, prevent_dupes, allowed_rarities, allowed_identities):
     filtered_db = []
     
-    # 1. Apply Color Filters
+    # Check if we are actively filtering by specific colors
+    filtering_colors = any(allowed_identities.values())
+    
+    # Create a list of the exact sets we want to allow (e.g. [{'W', 'U'}, {'G', 'W', 'U'}])
+    active_identity_sets = [IDENTITY_MAP[k] for k, is_active in allowed_identities.items() if is_active]
+    
     for card in db:
-        identity = card.get('color_identity', [])
-        
-        if not identity and exclusions['C']: continue
-        if 'W' in identity and exclusions['W']: continue
-        if 'U' in identity and exclusions['U']: continue
-        if 'B' in identity and exclusions['B']: continue
-        if 'R' in identity and exclusions['R']: continue
-        if 'G' in identity and exclusions['G']: continue
+        # 1. Rarity Filter
+        card_rarity = card.get('rarity', 'common')
+        if not allowed_rarities.get(card_rarity, True):
+            continue
+            
+        # 2. Color Identity Filter
+        if filtering_colors:
+            # Convert Scryfall's list ['W', 'U'] into a Python Set {'W', 'U'} for exact matching
+            card_identity = set(card.get('color_identity', []))
+            
+            # If the card's exact identity isn't in our allowed list, skip it
+            if card_identity not in active_identity_sets:
+                continue
         
         filtered_db.append(card)
 
     if len(filtered_db) < count:
-        return None, f"Too many restrictions! Only {len(filtered_db)} cards match your criteria."
+        return None, f"Too many restrictions! Only {len(filtered_db)} cards match your criteria. Please allow more options."
 
-    # 2. Apply Duplicate Logic
+    # 3. Apply Duplicate Logic
     if not prevent_dupes:
         return random.sample(filtered_db, count), None
     
@@ -126,14 +148,15 @@ if 'setup_complete' not in st.session_state:
     st.session_state.player_drafts = {}
     st.session_state.turn_index = 0
     st.session_state.direction = 1
-    # Settings
-    st.session_state.prevent_dupes = False
-    st.session_state.exclusions = {'W': False, 'U': False, 'B': False, 'R': False, 'G': False, 'C': False}
     st.session_state.error_msg = None
+    
+    # New Settings Variables
+    st.session_state.prevent_dupes = False
+    st.session_state.allowed_rarities = {'common': True, 'uncommon': True, 'rare': True, 'mythic': True}
+    st.session_state.allowed_identities = {k: False for k in IDENTITY_MAP.keys()}
 
 # --- HELPER: UPDATE PLAYERS ---
 def update_player_list():
-    """Syncs player_names list with num_players integer"""
     current_count = st.session_state.num_players
     st.session_state.player_names = [f"Player {i+1}" for i in range(current_count)]
     for p in st.session_state.player_names:
@@ -146,47 +169,98 @@ st.set_page_config(layout="wide", page_title="MTG Draft Tool")
 with st.spinner("Accessing Scryfall..."):
     full_db = get_full_commander_database()
 
-# --- SETTINGS MENU (GLOBAL) ---
-with st.popover("⚙️ Settings"):
-    st.markdown("### Draft Preferences")
-    
-    # 1. Player Count
-    st.number_input(
-        "Number of Players", 
-        min_value=2, 
-        max_value=12, 
-        key="num_players",
-        on_change=update_player_list
-    )
-    
-    # 2. Toggles
-    st.session_state.prevent_dupes = st.toggle("Prevent Set Duplicates", value=st.session_state.prevent_dupes)
-    
-    st.divider()
-    st.markdown("### Exclusions")
-    c1, c2 = st.columns(2)
-    with c1:
-        st.session_state.exclusions['W'] = st.toggle("Exclude White", value=st.session_state.exclusions['W'])
-        st.session_state.exclusions['U'] = st.toggle("Exclude Blue", value=st.session_state.exclusions['U'])
-        st.session_state.exclusions['B'] = st.toggle("Exclude Black", value=st.session_state.exclusions['B'])
-    with c2:
-        st.session_state.exclusions['R'] = st.toggle("Exclude Red", value=st.session_state.exclusions['R'])
-        st.session_state.exclusions['G'] = st.toggle("Exclude Green", value=st.session_state.exclusions['G'])
-        st.session_state.exclusions['C'] = st.toggle("Exclude Colorless", value=st.session_state.exclusions['C'])
-
-
 # --- VIEW 1: SETUP SCREEN ---
 if not st.session_state.setup_complete:
     st.title("MTG: Commander Draft Tool")
-    st.write("Configure your draft settings in the settings menu or start below.")
     
+    with st.expander("⚙️ Draft Settings", expanded=True):
+        st.subheader("General Settings")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.number_input(
+                "Number of Players", 
+                min_value=2, 
+                max_value=12, 
+                key="num_players",
+                on_change=update_player_list
+            )
+        with col2:
+            st.write("") # Spacing
+            st.write("")
+            st.session_state.prevent_dupes = st.toggle("Prevent Set Duplicates", value=st.session_state.prevent_dupes)
+
+        st.divider()
+
+        ### RARITY SETTINGS ###
+        st.subheader("Allowed Rarities")
+        st.write("Toggle off to remove a rarity from the draft pool.")
+        
+        r_col1, r_col2, r_col3, r_col4 = st.columns(4)
+        with r_col1:
+            st.session_state.allowed_rarities['common'] = st.toggle("Common", value=st.session_state.allowed_rarities['common'])
+        with r_col2:
+            st.session_state.allowed_rarities['uncommon'] = st.toggle("Uncommon", value=st.session_state.allowed_rarities['uncommon'])
+        with r_col3:
+            st.session_state.allowed_rarities['rare'] = st.toggle("Rare", value=st.session_state.allowed_rarities['rare'])
+        with r_col4:
+            st.session_state.allowed_rarities['mythic'] = st.toggle("Mythic Rare", value=st.session_state.allowed_rarities['mythic'])
+
+        st.divider()
+
+        ### COLOR IDENTITY SETTINGS ###
+        st.subheader("Color Identity Restrictions")
+        st.write("Enable to lock the draft pool to specific exact color identities. Leave all unchecked to allow everything.")
+        
+        # 2-Color (Guilds)
+        st.markdown("**2-Color (Guilds)**")
+        g_col1, g_col2, g_col3, g_col4, g_col5 = st.columns(5)
+        with g_col1:
+            st.session_state.allowed_identities['Azorius'] = st.toggle("Azorius (WU)", value=st.session_state.allowed_identities['Azorius'])
+            st.session_state.allowed_identities['Orzhov'] = st.toggle("Orzhov (WB)", value=st.session_state.allowed_identities['Orzhov'])
+        with g_col2:
+            st.session_state.allowed_identities['Dimir'] = st.toggle("Dimir (UB)", value=st.session_state.allowed_identities['Dimir'])
+            st.session_state.allowed_identities['Izzet'] = st.toggle("Izzet (UR)", value=st.session_state.allowed_identities['Izzet'])
+        with g_col3:
+            st.session_state.allowed_identities['Rakdos'] = st.toggle("Rakdos (BR)", value=st.session_state.allowed_identities['Rakdos'])
+            st.session_state.allowed_identities['Golgari'] = st.toggle("Golgari (BG)", value=st.session_state.allowed_identities['Golgari'])
+        with g_col4:
+            st.session_state.allowed_identities['Gruul'] = st.toggle("Gruul (RG)", value=st.session_state.allowed_identities['Gruul'])
+            st.session_state.allowed_identities['Boros'] = st.toggle("Boros (RW)", value=st.session_state.allowed_identities['Boros'])
+        with g_col5:
+            st.session_state.allowed_identities['Selesnya'] = st.toggle("Selesnya (GW)", value=st.session_state.allowed_identities['Selesnya'])
+            st.session_state.allowed_identities['Simic'] = st.toggle("Simic (GU)", value=st.session_state.allowed_identities['Simic'])
+
+        # 3-Color (Shards & Wedges)
+        st.markdown("**3-Color (Shards & Wedges)**")
+        s_col1, s_col2, s_col3, s_col4, s_col5 = st.columns(5)
+        with s_col1:
+            st.session_state.allowed_identities['Bant'] = st.toggle("Bant (GWU)", value=st.session_state.allowed_identities['Bant'])
+            st.session_state.allowed_identities['Mardu'] = st.toggle("Mardu (WBR)", value=st.session_state.allowed_identities['Mardu'])
+        with s_col2:
+            st.session_state.allowed_identities['Esper'] = st.toggle("Esper (WUB)", value=st.session_state.allowed_identities['Esper'])
+            st.session_state.allowed_identities['Temur'] = st.toggle("Temur (URG)", value=st.session_state.allowed_identities['Temur'])
+        with s_col3:
+            st.session_state.allowed_identities['Grixis'] = st.toggle("Grixis (UBR)", value=st.session_state.allowed_identities['Grixis'])
+            st.session_state.allowed_identities['Abzan'] = st.toggle("Abzan (WBG)", value=st.session_state.allowed_identities['Abzan'])
+        with s_col4:
+            st.session_state.allowed_identities['Jund'] = st.toggle("Jund (BRG)", value=st.session_state.allowed_identities['Jund'])
+            st.session_state.allowed_identities['Jeskai'] = st.toggle("Jeskai (URW)", value=st.session_state.allowed_identities['Jeskai'])
+        with s_col5:
+            st.session_state.allowed_identities['Naya'] = st.toggle("Naya (RGW)", value=st.session_state.allowed_identities['Naya'])
+            st.session_state.allowed_identities['Sultai'] = st.toggle("Sultai (BGU)", value=st.session_state.allowed_identities['Sultai'])
+
+        # 5-Color
+        st.markdown("**5-Color**")
+        st.session_state.allowed_identities['WUBRG'] = st.toggle("WUBRG (All Colors)", value=st.session_state.allowed_identities['WUBRG'])
+
+    st.write("---")
     st.write(f"**Current Players:** {st.session_state.num_players}")
     
-    if st.button("Start Draft"):
+    if st.button("Start Draft", type="primary"):
         update_player_list()
         pool_size = st.session_state.num_players * 5
         
-        pool, err = get_diverse_pool(full_db, pool_size, st.session_state.prevent_dupes, st.session_state.exclusions)
+        pool, err = get_diverse_pool(full_db, pool_size, st.session_state.prevent_dupes, st.session_state.allowed_rarities, st.session_state.allowed_identities)
         
         if err:
             st.error(err)
@@ -272,7 +346,7 @@ else:
                     if st.button(btn_label, use_container_width=True):
                         update_player_list()
                         pool_size = st.session_state.num_players * 5
-                        pool, err = get_diverse_pool(full_db, pool_size, st.session_state.prevent_dupes, st.session_state.exclusions)
+                        pool, err = get_diverse_pool(full_db, pool_size, st.session_state.prevent_dupes, st.session_state.allowed_rarities, st.session_state.allowed_identities)
                         
                         if err:
                             st.session_state.error_msg = err
