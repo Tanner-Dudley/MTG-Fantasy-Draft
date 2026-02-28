@@ -1,24 +1,13 @@
 import streamlit as st
 import requests
-import random
 import time
 
 # --- CONFIGURATION ---
 SCRYFALL_SEARCH_URL = "https://api.scryfall.com/cards/search"
 CARDS_PER_ROW = 4
 
-# --- COLOR IDENTITY MAPPING ---
-# Maps colloquial names to exact Scryfall color identity sets
-IDENTITY_MAP = {
-    'Azorius': {'W', 'U'}, 'Orzhov': {'W', 'B'}, 'Dimir': {'U', 'B'}, 'Izzet': {'U', 'R'}, 
-    'Rakdos': {'B', 'R'}, 'Golgari': {'B', 'G'}, 'Gruul': {'R', 'G'}, 'Boros': {'R', 'W'}, 
-    'Selesnya': {'G', 'W'}, 'Simic': {'G', 'U'},
-    'Bant': {'G', 'W', 'U'}, 'Mardu': {'W', 'B', 'R'}, 'Esper': {'W', 'U', 'B'}, 
-    'Temur': {'U', 'R', 'G'}, 'Grixis': {'U', 'B', 'R'}, 'Abzan': {'W', 'B', 'G'}, 
-    'Jund': {'B', 'R', 'G'}, 'Jeskai': {'U', 'R', 'W'}, 'Naya': {'R', 'G', 'W'}, 
-    'Sultai': {'B', 'G', 'U'},
-    'WUBRG': {'W', 'U', 'B', 'R', 'G'}
-}
+# Import pure logic (no Streamlit) so test_logic.py can import it without side effects
+from draft_logic import IDENTITY_MAP, get_diverse_pool
 
 # --- CSS ---
 st.markdown("""
@@ -87,59 +76,10 @@ def get_full_commander_database():
     progress_text.empty()
     return all_cards
 
-# --- LOGIC: GENERATE POOL ---
-def get_diverse_pool(db, count, prevent_dupes, allowed_rarities, allowed_identities):
-    filtered_db = []
-    
-    # Check if we are actively filtering by specific colors
-    filtering_colors = any(allowed_identities.values())
-    
-    # Create a list of the exact sets we want to allow (e.g. [{'W', 'U'}, {'G', 'W', 'U'}])
-    active_identity_sets = [IDENTITY_MAP[k] for k, is_active in allowed_identities.items() if is_active]
-    
-    for card in db:
-        # 1. Rarity Filter
-        card_rarity = card.get('rarity', 'common')
-        if not allowed_rarities.get(card_rarity, True):
-            continue
-            
-        # 2. Color Identity Filter
-        if filtering_colors:
-            # Convert Scryfall's list ['W', 'U'] into a Python Set {'W', 'U'} for exact matching
-            card_identity = set(card.get('color_identity', []))
-            
-            # If the card's exact identity isn't in our allowed list, skip it
-            if card_identity not in active_identity_sets:
-                continue
-        
-        filtered_db.append(card)
-
-    if len(filtered_db) < count:
-        return None, f"Too many restrictions! Only {len(filtered_db)} cards match your criteria. Please allow more options."
-
-    # 3. Apply Duplicate Logic
-    if not prevent_dupes:
-        return random.sample(filtered_db, count), None
-    
-    selected = []
-    seen_sets = set()
-    shuffled_db = random.sample(filtered_db, len(filtered_db))
-    
-    for card in shuffled_db:
-        set_code = card.get('set')
-        if set_code not in seen_sets:
-            selected.append(card)
-            seen_sets.add(set_code)
-        if len(selected) >= count:
-            break
-    
-    if len(selected) < count:
-        return None, "Too many restrictions! (Set Duplicates prevented filling the pool)"
-        
-    return selected, None
 
 # --- INITIALIZE STATE ---
 if 'setup_complete' not in st.session_state:
+    st.session_state.num_players_widget = 4 
     st.session_state.setup_complete = False
     st.session_state.num_players = 4
     st.session_state.pool = []
@@ -157,6 +97,10 @@ if 'setup_complete' not in st.session_state:
 
 # --- HELPER: UPDATE PLAYERS ---
 def update_player_list():
+    # Safely capture the UI widget's value into permanent memory
+    if 'num_players_widget' in st.session_state:
+        st.session_state.num_players = st.session_state.num_players_widget
+        
     current_count = st.session_state.num_players
     st.session_state.player_names = [f"Player {i+1}" for i in range(current_count)]
     for p in st.session_state.player_names:
@@ -181,7 +125,8 @@ if not st.session_state.setup_complete:
                 "Number of Players", 
                 min_value=2, 
                 max_value=12, 
-                key="num_players",
+                value=st.session_state.num_players,
+                key="num_players_widget",
                 on_change=update_player_list
             )
         with col2:

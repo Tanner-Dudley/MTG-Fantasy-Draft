@@ -1,4 +1,4 @@
-from Draft import get_diverse_pool, IDENTITY_MAP
+from draft_logic import get_diverse_pool, IDENTITY_MAP
 
 # --- HELPER FUNCTION ---
 def make_card(name, rarity, identity, set_code="m21"):
@@ -57,3 +57,16 @@ def test_duplicate_prevention():
     # Grab the set codes of the drafted cards
     sets_in_pool = {card['set'] for card in pool}
     assert len(sets_in_pool) == 2 # Proves it pulled from two distinct sets
+    
+def test_not_enough_cards_error():
+    # Provide only 1 fake card
+    db = [make_card("Lonely Card", "common", ["W"])]
+    allowed_r = {'common': True, 'uncommon': True, 'rare': True, 'mythic': True}
+    allowed_id = {k: False for k in IDENTITY_MAP.keys()}
+    
+    # Ask the app to draft 50 cards from a database that only has 1
+    pool, err = get_diverse_pool(db, count=50, prevent_dupes=False, allowed_rarities=allowed_r, allowed_identities=allowed_id)
+    
+    # Verify the app returns None for the pool, and hands back our error string
+    assert pool is None
+    assert "Too many restrictions!" in err
