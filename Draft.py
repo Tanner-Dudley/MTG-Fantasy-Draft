@@ -79,7 +79,6 @@ def get_full_commander_database():
 
 # --- INITIALIZE STATE ---
 if 'setup_complete' not in st.session_state:
-    st.session_state.num_players_widget = 4 
     st.session_state.setup_complete = False
     st.session_state.num_players = 4
     st.session_state.pool = []
