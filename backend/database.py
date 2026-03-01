@@ -17,13 +17,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 from .config import settings
 
+db_url = settings.effective_database_url
+
 connect_args = {}
-if settings.database_url.startswith("sqlite"):
-    # SQLite doesn't natively support access from multiple threads.
-    # This flag tells SQLAlchemy that's OK since it manages connections.
+if db_url.startswith("sqlite"):
     connect_args["check_same_thread"] = False
 
-engine = create_engine(settings.database_url, connect_args=connect_args)
+engine = create_engine(db_url, connect_args=connect_args)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

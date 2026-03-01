@@ -9,5 +9,13 @@ class Settings(BaseSettings):
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
+    @property
+    def effective_database_url(self) -> str:
+        url = self.database_url
+        # Render's Postgres URLs use "postgres://" but SQLAlchemy requires "postgresql://"
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+        return url
+
 
 settings = Settings()
