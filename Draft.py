@@ -7,7 +7,7 @@ SCRYFALL_SEARCH_URL = "https://api.scryfall.com/cards/search"
 CARDS_PER_ROW = 4
 
 # Import pure logic (no Streamlit) so test_logic.py can import it without side effects
-from draft_logic import IDENTITY_MAP, get_diverse_pool, get_edhrec_tags
+from draft_logic import IDENTITY_MAP, get_diverse_pool, get_edhrec_tags, get_edhrec_top_commanders
 
 # --- CSS ---
 st.markdown("""
@@ -120,6 +120,39 @@ def fetch_tags_cached(card_name):
     return get_edhrec_tags(card_name)
 
 
+# --- API: FETCH EDHREC TOP 100 ---
+@st.cache_data(show_spinner=False)
+def fetch_top_commanders_cached(period="year"):
+    """Cached wrapper for EDHRec top commanders. Fetches once per session."""
+    return get_edhrec_top_commanders(period=period, count=100)
+
+
+def build_top100_pool(full_db, pool_size):
+    """
+    Cross-references the EDHRec top 100 with our Scryfall database by ID,
+    then randomly samples pool_size cards from the matched results.
+    """
+    import random
+    top_cards, err = fetch_top_commanders_cached("year")
+    if err:
+        return None, f"Could not fetch EDHRec Top 100: {err}"
+
+    # Build a fast ID lookup from the Scryfall database
+    scryfall_lookup = {card['id']: card for card in full_db}
+
+    # Match EDHRec IDs against Scryfall data to get full card objects
+    available = []
+    for edhrec_card in top_cards:
+        scryfall_card = scryfall_lookup.get(edhrec_card['id'])
+        if scryfall_card:
+            available.append(scryfall_card)
+
+    if len(available) < pool_size:
+        return None, f"Only {len(available)} of the EDHRec Top 100 matched the Scryfall database."
+
+    return random.sample(available, pool_size), None
+
+
 # --- INITIALIZE STATE ---
 if 'setup_complete' not in st.session_state:
     st.session_state.setup_complete = False
@@ -136,6 +169,8 @@ if 'setup_complete' not in st.session_state:
     st.session_state.prevent_dupes = False
     st.session_state.allowed_rarities = {'common': True, 'uncommon': True, 'rare': True, 'mythic': True}
     st.session_state.allowed_identities = {k: False for k in IDENTITY_MAP.keys()}
+    # Unique Draft Modes
+    st.session_state.unique_draft_top100 = False
 
 # --- HELPER: UPDATE PLAYERS ---
 def update_player_list():
@@ -153,7 +188,23 @@ def update_player_list():
 def render_settings(show_player_count=True):
     """Renders the draft settings expander. Called in both Setup and Draft views."""
     with st.expander("⚙️ Draft Settings", expanded=not st.session_state.setup_complete):
-        
+
+        # --- UNIQUE DRAFTS ---
+        st.subheader("🏆 Unique Drafts")
+        st.write("Overrides all other settings. Draft from a curated EDHRec list.")
+        st.session_state.unique_draft_top100 = st.toggle(
+            "Top 100 Commanders (Past Year)",
+            value=st.session_state.unique_draft_top100,
+            key="toggle_top100"
+        )
+        if st.session_state.unique_draft_top100:
+            st.info("Top 100 mode active — rarity, color identity, and duplicate settings are bypassed.")
+
+        st.divider()
+
+        # All settings below are disabled when a unique draft mode is on
+        locked = st.session_state.unique_draft_top100
+
         if show_player_count:
             st.subheader("General Settings")
             col1, col2 = st.columns(2)
@@ -169,10 +220,10 @@ def render_settings(show_player_count=True):
             with col2:
                 st.write("")
                 st.write("")
-                st.session_state.prevent_dupes = st.toggle("Prevent Set Duplicates", value=st.session_state.prevent_dupes, key="toggle_dupes")
+                st.session_state.prevent_dupes = st.toggle("Prevent Set Duplicates", value=st.session_state.prevent_dupes, key="toggle_dupes", disabled=locked)
         else:
             st.subheader("General Settings")
-            st.session_state.prevent_dupes = st.toggle("Prevent Set Duplicates", value=st.session_state.prevent_dupes, key="toggle_dupes")
+            st.session_state.prevent_dupes = st.toggle("Prevent Set Duplicates", value=st.session_state.prevent_dupes, key="toggle_dupes", disabled=locked)
 
         st.divider()
 
@@ -181,13 +232,13 @@ def render_settings(show_player_count=True):
         st.write("Toggle off to remove a rarity from the draft pool.")
         r_col1, r_col2, r_col3, r_col4 = st.columns(4)
         with r_col1:
-            st.session_state.allowed_rarities['common'] = st.toggle("Common", value=st.session_state.allowed_rarities['common'], key="toggle_common")
+            st.session_state.allowed_rarities['common'] = st.toggle("Common", value=st.session_state.allowed_rarities['common'], key="toggle_common", disabled=locked)
         with r_col2:
-            st.session_state.allowed_rarities['uncommon'] = st.toggle("Uncommon", value=st.session_state.allowed_rarities['uncommon'], key="toggle_uncommon")
+            st.session_state.allowed_rarities['uncommon'] = st.toggle("Uncommon", value=st.session_state.allowed_rarities['uncommon'], key="toggle_uncommon", disabled=locked)
         with r_col3:
-            st.session_state.allowed_rarities['rare'] = st.toggle("Rare", value=st.session_state.allowed_rarities['rare'], key="toggle_rare")
+            st.session_state.allowed_rarities['rare'] = st.toggle("Rare", value=st.session_state.allowed_rarities['rare'], key="toggle_rare", disabled=locked)
         with r_col4:
-            st.session_state.allowed_rarities['mythic'] = st.toggle("Mythic Rare", value=st.session_state.allowed_rarities['mythic'], key="toggle_mythic")
+            st.session_state.allowed_rarities['mythic'] = st.toggle("Mythic Rare", value=st.session_state.allowed_rarities['mythic'], key="toggle_mythic", disabled=locked)
 
         st.divider()
 
@@ -198,41 +249,41 @@ def render_settings(show_player_count=True):
         st.markdown("**2-Color (Guilds)**")
         g_col1, g_col2, g_col3, g_col4, g_col5 = st.columns(5)
         with g_col1:
-            st.session_state.allowed_identities['Azorius'] = st.toggle("Azorius (WU)", value=st.session_state.allowed_identities['Azorius'], key="toggle_Azorius")
-            st.session_state.allowed_identities['Orzhov'] = st.toggle("Orzhov (WB)", value=st.session_state.allowed_identities['Orzhov'], key="toggle_Orzhov")
+            st.session_state.allowed_identities['Azorius'] = st.toggle("Azorius (WU)", value=st.session_state.allowed_identities['Azorius'], key="toggle_Azorius", disabled=locked)
+            st.session_state.allowed_identities['Orzhov'] = st.toggle("Orzhov (WB)", value=st.session_state.allowed_identities['Orzhov'], key="toggle_Orzhov", disabled=locked)
         with g_col2:
-            st.session_state.allowed_identities['Dimir'] = st.toggle("Dimir (UB)", value=st.session_state.allowed_identities['Dimir'], key="toggle_Dimir")
-            st.session_state.allowed_identities['Izzet'] = st.toggle("Izzet (UR)", value=st.session_state.allowed_identities['Izzet'], key="toggle_Izzet")
+            st.session_state.allowed_identities['Dimir'] = st.toggle("Dimir (UB)", value=st.session_state.allowed_identities['Dimir'], key="toggle_Dimir", disabled=locked)
+            st.session_state.allowed_identities['Izzet'] = st.toggle("Izzet (UR)", value=st.session_state.allowed_identities['Izzet'], key="toggle_Izzet", disabled=locked)
         with g_col3:
-            st.session_state.allowed_identities['Rakdos'] = st.toggle("Rakdos (BR)", value=st.session_state.allowed_identities['Rakdos'], key="toggle_Rakdos")
-            st.session_state.allowed_identities['Golgari'] = st.toggle("Golgari (BG)", value=st.session_state.allowed_identities['Golgari'], key="toggle_Golgari")
+            st.session_state.allowed_identities['Rakdos'] = st.toggle("Rakdos (BR)", value=st.session_state.allowed_identities['Rakdos'], key="toggle_Rakdos", disabled=locked)
+            st.session_state.allowed_identities['Golgari'] = st.toggle("Golgari (BG)", value=st.session_state.allowed_identities['Golgari'], key="toggle_Golgari", disabled=locked)
         with g_col4:
-            st.session_state.allowed_identities['Gruul'] = st.toggle("Gruul (RG)", value=st.session_state.allowed_identities['Gruul'], key="toggle_Gruul")
-            st.session_state.allowed_identities['Boros'] = st.toggle("Boros (RW)", value=st.session_state.allowed_identities['Boros'], key="toggle_Boros")
+            st.session_state.allowed_identities['Gruul'] = st.toggle("Gruul (RG)", value=st.session_state.allowed_identities['Gruul'], key="toggle_Gruul", disabled=locked)
+            st.session_state.allowed_identities['Boros'] = st.toggle("Boros (RW)", value=st.session_state.allowed_identities['Boros'], key="toggle_Boros", disabled=locked)
         with g_col5:
-            st.session_state.allowed_identities['Selesnya'] = st.toggle("Selesnya (GW)", value=st.session_state.allowed_identities['Selesnya'], key="toggle_Selesnya")
-            st.session_state.allowed_identities['Simic'] = st.toggle("Simic (GU)", value=st.session_state.allowed_identities['Simic'], key="toggle_Simic")
+            st.session_state.allowed_identities['Selesnya'] = st.toggle("Selesnya (GW)", value=st.session_state.allowed_identities['Selesnya'], key="toggle_Selesnya", disabled=locked)
+            st.session_state.allowed_identities['Simic'] = st.toggle("Simic (GU)", value=st.session_state.allowed_identities['Simic'], key="toggle_Simic", disabled=locked)
 
         st.markdown("**3-Color (Shards & Wedges)**")
         s_col1, s_col2, s_col3, s_col4, s_col5 = st.columns(5)
         with s_col1:
-            st.session_state.allowed_identities['Bant'] = st.toggle("Bant (GWU)", value=st.session_state.allowed_identities['Bant'], key="toggle_Bant")
-            st.session_state.allowed_identities['Mardu'] = st.toggle("Mardu (WBR)", value=st.session_state.allowed_identities['Mardu'], key="toggle_Mardu")
+            st.session_state.allowed_identities['Bant'] = st.toggle("Bant (GWU)", value=st.session_state.allowed_identities['Bant'], key="toggle_Bant", disabled=locked)
+            st.session_state.allowed_identities['Mardu'] = st.toggle("Mardu (WBR)", value=st.session_state.allowed_identities['Mardu'], key="toggle_Mardu", disabled=locked)
         with s_col2:
-            st.session_state.allowed_identities['Esper'] = st.toggle("Esper (WUB)", value=st.session_state.allowed_identities['Esper'], key="toggle_Esper")
-            st.session_state.allowed_identities['Temur'] = st.toggle("Temur (URG)", value=st.session_state.allowed_identities['Temur'], key="toggle_Temur")
+            st.session_state.allowed_identities['Esper'] = st.toggle("Esper (WUB)", value=st.session_state.allowed_identities['Esper'], key="toggle_Esper", disabled=locked)
+            st.session_state.allowed_identities['Temur'] = st.toggle("Temur (URG)", value=st.session_state.allowed_identities['Temur'], key="toggle_Temur", disabled=locked)
         with s_col3:
-            st.session_state.allowed_identities['Grixis'] = st.toggle("Grixis (UBR)", value=st.session_state.allowed_identities['Grixis'], key="toggle_Grixis")
-            st.session_state.allowed_identities['Abzan'] = st.toggle("Abzan (WBG)", value=st.session_state.allowed_identities['Abzan'], key="toggle_Abzan")
+            st.session_state.allowed_identities['Grixis'] = st.toggle("Grixis (UBR)", value=st.session_state.allowed_identities['Grixis'], key="toggle_Grixis", disabled=locked)
+            st.session_state.allowed_identities['Abzan'] = st.toggle("Abzan (WBG)", value=st.session_state.allowed_identities['Abzan'], key="toggle_Abzan", disabled=locked)
         with s_col4:
-            st.session_state.allowed_identities['Jund'] = st.toggle("Jund (BRG)", value=st.session_state.allowed_identities['Jund'], key="toggle_Jund")
-            st.session_state.allowed_identities['Jeskai'] = st.toggle("Jeskai (URW)", value=st.session_state.allowed_identities['Jeskai'], key="toggle_Jeskai")
+            st.session_state.allowed_identities['Jund'] = st.toggle("Jund (BRG)", value=st.session_state.allowed_identities['Jund'], key="toggle_Jund", disabled=locked)
+            st.session_state.allowed_identities['Jeskai'] = st.toggle("Jeskai (URW)", value=st.session_state.allowed_identities['Jeskai'], key="toggle_Jeskai", disabled=locked)
         with s_col5:
-            st.session_state.allowed_identities['Naya'] = st.toggle("Naya (RGW)", value=st.session_state.allowed_identities['Naya'], key="toggle_Naya")
-            st.session_state.allowed_identities['Sultai'] = st.toggle("Sultai (BGU)", value=st.session_state.allowed_identities['Sultai'], key="toggle_Sultai")
+            st.session_state.allowed_identities['Naya'] = st.toggle("Naya (RGW)", value=st.session_state.allowed_identities['Naya'], key="toggle_Naya", disabled=locked)
+            st.session_state.allowed_identities['Sultai'] = st.toggle("Sultai (BGU)", value=st.session_state.allowed_identities['Sultai'], key="toggle_Sultai", disabled=locked)
 
         st.markdown("**5-Color**")
-        st.session_state.allowed_identities['WUBRG'] = st.toggle("WUBRG (All Colors)", value=st.session_state.allowed_identities['WUBRG'], key="toggle_WUBRG")
+        st.session_state.allowed_identities['WUBRG'] = st.toggle("WUBRG (All Colors)", value=st.session_state.allowed_identities['WUBRG'], key="toggle_WUBRG", disabled=locked)
 
 # --- UI START ---
 st.set_page_config(layout="wide", page_title="MTG Draft Tool")
@@ -252,9 +303,13 @@ if not st.session_state.setup_complete:
     if st.button("Start Draft", type="primary"):
         update_player_list()
         pool_size = st.session_state.num_players * 5
-        
-        pool, err = get_diverse_pool(full_db, pool_size, st.session_state.prevent_dupes, st.session_state.allowed_rarities, st.session_state.allowed_identities)
-        
+
+        if st.session_state.unique_draft_top100:
+            with st.spinner("Fetching EDHRec Top 100..."):
+                pool, err = build_top100_pool(full_db, pool_size)
+        else:
+            pool, err = get_diverse_pool(full_db, pool_size, st.session_state.prevent_dupes, st.session_state.allowed_rarities, st.session_state.allowed_identities)
+
         if err:
             st.error(err)
         else:
@@ -359,8 +414,12 @@ else:
                     if st.button(btn_label, use_container_width=True):
                         update_player_list()
                         pool_size = st.session_state.num_players * 5
-                        pool, err = get_diverse_pool(full_db, pool_size, st.session_state.prevent_dupes, st.session_state.allowed_rarities, st.session_state.allowed_identities)
-                        
+
+                        if st.session_state.unique_draft_top100:
+                            pool, err = build_top100_pool(full_db, pool_size)
+                        else:
+                            pool, err = get_diverse_pool(full_db, pool_size, st.session_state.prevent_dupes, st.session_state.allowed_rarities, st.session_state.allowed_identities)
+
                         if err:
                             st.session_state.error_msg = err
                         else:
@@ -402,4 +461,3 @@ else:
             st.session_state.turn_index = 0
             st.session_state.direction = 1
             st.rerun()
-
