@@ -27,22 +27,25 @@ def main():
         print("  Then re-run this test.")
         sys.exit(1)
 
-    # 1. Register two users
-    print("\n=== Register User 1 (Alice) ===")
-    r1 = requests.post(
-        f"{BASE}/register",
-        json={"username": "alice", "password": "Test@1234", "display_name": "Alice"},
-    )
-    print(f"  {r1.status_code} - got token: {bool(r1.json().get('access_token'))}")
-    token1 = r1.json()["access_token"]
+    # 1. Register or login two users
+    def get_token(username, password, display_name):
+        r = requests.post(
+            f"{BASE}/register",
+            json={"username": username, "password": password, "display_name": display_name},
+        )
+        if r.status_code == 409:
+            r = requests.post(
+                f"{BASE}/login", json={"username": username, "password": password}
+            )
+        return r.json()["access_token"]
 
-    print("\n=== Register User 2 (Bob) ===")
-    r2 = requests.post(
-        f"{BASE}/register",
-        json={"username": "bob", "password": "Test@5678", "display_name": "Bob"},
-    )
-    print(f"  {r2.status_code} - got token: {bool(r2.json().get('access_token'))}")
-    token2 = r2.json()["access_token"]
+    print("\n=== Auth User 1 (Alice) ===")
+    token1 = get_token("alice", "Test@1234", "Alice")
+    print(f"  got token: {bool(token1)}")
+
+    print("\n=== Auth User 2 (Bob) ===")
+    token2 = get_token("bob", "Test@5678", "Bob")
+    print(f"  got token: {bool(token2)}")
 
     h1 = {"Authorization": f"Bearer {token1}"}
     h2 = {"Authorization": f"Bearer {token2}"}

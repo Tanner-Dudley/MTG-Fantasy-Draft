@@ -11,9 +11,11 @@ import logging
 import random
 import string
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from .auth import (
@@ -438,3 +440,13 @@ def get_results(
 def health(db: Session = Depends(get_db)):
     card_count = db.query(Card).count()
     return {"status": "ok", "cards_loaded": card_count}
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  STATIC FRONTEND
+#  Must be mounted LAST so /api routes take priority.
+# ══════════════════════════════════════════════════════════════════════
+
+_frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+if _frontend_dir.is_dir():
+    app.mount("/", StaticFiles(directory=str(_frontend_dir), html=True), name="frontend")
