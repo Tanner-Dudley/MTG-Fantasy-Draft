@@ -4,7 +4,7 @@ Smoke test for the database-backed backend API.
 Prerequisites:
   1. Seed the database:    python -m backend.seed_cards
   2. Start the server:     uvicorn backend.main:app --reload
-  3. Run this test:        python test_api.py
+  3. Run this test:        python scripts/smoke_test_api.py
 """
 
 import requests

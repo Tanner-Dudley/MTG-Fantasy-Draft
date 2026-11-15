@@ -380,7 +380,7 @@ def make_pick(
         pick_number=pick_number,
     ))
 
-    # ── Snake draft turn advancement (mirrors Draft.py logic) ──
+    # ── Snake draft turn advancement (order: 1-2-3-4-4-3-2-1) ──
     num_players = len(player_ids)
     next_index = lobby.current_turn_index + lobby.direction
 

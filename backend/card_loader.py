@@ -1,8 +1,8 @@
 """
 Fetches every legal Commander from Scryfall and caches them in memory.
 
-This replaces Draft.py's get_full_commander_database() but has zero
-Streamlit dependency, so it can run inside FastAPI.
+Loads the full Commander card list without any
+UI dependency, so it can run inside FastAPI.
 """
 
 import logging
