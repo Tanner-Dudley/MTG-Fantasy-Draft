@@ -1,4 +1,4 @@
 # Tools needed only for development and CI, not in the production image.
 -r requirements.txt
-pytest
-httpx  # required by FastAPI's TestClient
+pytest==9.2.0
+httpx==0.28.1  # required by FastAPI's TestClient

@@ -1,0 +1,6 @@
+# Let git normalize line endings for text files.
+* text=auto
+
+# Shell scripts run inside Linux containers, so they must always use LF
+# line endings, even when checked out on Windows.
+*.sh text eol=lf
