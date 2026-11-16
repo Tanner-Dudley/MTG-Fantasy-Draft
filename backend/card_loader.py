@@ -13,6 +13,12 @@ import requests
 logger = logging.getLogger(__name__)
 
 SCRYFALL_SEARCH_URL = "https://api.scryfall.com/cards/search"
+# Scryfall rejects requests with a generic library User-Agent.
+# See https://scryfall.com/docs/api ("Required Headers").
+SCRYFALL_HEADERS = {
+    "User-Agent": "MTGFantasyDraft/1.0",
+    "Accept": "application/json",
+}
 
 _card_cache: list[dict] | None = None
 
@@ -40,7 +46,9 @@ def load_all_commanders() -> list[dict]:
 
     while has_more:
         resp = requests.get(
-            url, params=params if url == SCRYFALL_SEARCH_URL else None
+            url,
+            params=params if url == SCRYFALL_SEARCH_URL else None,
+            headers=SCRYFALL_HEADERS,
         )
         resp.raise_for_status()
         data = resp.json()
