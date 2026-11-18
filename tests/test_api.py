@@ -147,3 +147,26 @@ def test_cannot_join_full_lobby(client, make_player):
     
     assert response.status_code == 400
     assert response.json()["detail"] == "Lobby is full"
+
+
+def test_snake_draft_order_with_four_players(client, cards, make_player):
+        alice = make_player("alice")
+        bob = make_player("bob")
+        carol = make_player("carol")
+        gene = make_player("gene")
+
+        state = start_draft(client, [alice, bob, carol, gene])
+
+        expected_order = [alice, bob, carol, gene, gene, carol, bob, alice]
+
+        for pick_number, player in enumerate(expected_order):
+            card_id = state["pool"][pick_number]["id"]
+            response = client.post(
+                f"/api/lobbies/{state['id']}/pick",
+                json={"card_id": card_id},
+                headers=player.headers,
+            )
+
+            assert response.status_code == 200, f"pick{pick_number} should be allowed"
+
+        assert response.json()["next_turn_user_id"] == alice.id
