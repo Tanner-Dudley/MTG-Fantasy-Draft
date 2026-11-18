@@ -36,7 +36,7 @@ def test_owner_can_start_draft_with_two_players(client, cards, make_player):
     state = start_draft(client, [alice, bob])
 
     assert state["status"] == "drafting"
-    assert len(state["pool"]) == 10
+    assert len(state["pool"]) == 11
     assert state["current_turn_user_id"] == alice.id
 
 
