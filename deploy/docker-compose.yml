@@ -12,8 +12,7 @@ services:
       - app
 
   app:
-    build: ..
-    image: mtg-draft
+    image: ghcr.io/tanner-dudley/mtg-draft:latest
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://mtg:${POSTGRES_PASSWORD}@db:5432/mtgdraft
