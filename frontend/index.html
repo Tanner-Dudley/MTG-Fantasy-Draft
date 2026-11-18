@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MTG Commander Draft</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Toast notifications -->
+  <div id="toast" class="toast"></div>
+
+  <!-- ═══════════ AUTH SCREEN ═══════════ -->
+  <div id="auth-screen" class="screen active">
+    <div class="auth-card">
+      <h1 class="logo">MTG Commander Draft</h1>
+      <div class="tabs">
+        <button class="tab active" onclick="switchAuthTab('login')">Login</button>
+        <button class="tab" onclick="switchAuthTab('register')">Register</button>
+      </div>
+
+      <form id="login-form" onsubmit="doLogin(event)">
+        <input type="text" id="login-username" placeholder="Username" required autocomplete="username">
+        <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
+        <button type="submit" class="btn primary">Login</button>
+      </form>
+
+      <form id="register-form" class="hidden" onsubmit="doRegister(event)">
+        <input type="text" id="reg-username" placeholder="Username" required autocomplete="username">
+        <input type="text" id="reg-display" placeholder="Display Name" required>
+        <input type="password" id="reg-password" placeholder="Password" required autocomplete="new-password">
+        <p class="hint">Min 8 characters, 1 uppercase letter, 1 special character</p>
+        <button type="submit" class="btn primary">Create Account</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════ HOME SCREEN ═══════════ -->
+  <div id="home-screen" class="screen">
+    <header class="topbar">
+      <h1 class="logo-sm">MTG Commander Draft</h1>
+      <div class="topbar-right">
+        <span id="welcome-name"></span>
+        <button class="btn small" onclick="doLogout()">Logout</button>
+      </div>
+    </header>
+
+    <div class="home-grid">
+      <div class="panel">
+        <h2>Create a Lobby</h2>
+        <form onsubmit="doCreateLobby(event)">
+          <input type="text" id="lobby-name" placeholder="Lobby Name" required>
+          <label for="lobby-players">Number of Players</label>
+          <input type="number" id="lobby-players" min="2" max="12" value="4">
+          <button type="submit" class="btn primary">Create Lobby</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h2>Join a Lobby</h2>
+        <form onsubmit="doJoinLobby(event)">
+          <input type="text" id="join-code" placeholder="Enter Lobby Code" maxlength="6"
+                 style="text-transform:uppercase; letter-spacing:0.2em; text-align:center; font-size:1.3rem;" required>
+          <button type="submit" class="btn primary">Join</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ LOBBY SCREEN (Waiting Room) ═══════════ -->
+  <div id="lobby-screen" class="screen">
+    <header class="topbar">
+      <button class="btn small" onclick="leaveLobby()">← Back</button>
+      <h1 class="logo-sm" id="lobby-title">Lobby</h1>
+      <div class="topbar-right">
+        <span id="lobby-welcome-name"></span>
+      </div>
+    </header>
+
+    <div class="lobby-center">
+      <p class="label">Share this code with your friends</p>
+      <div class="code-display">
+        <span id="lobby-code-text"></span>
+        <button class="btn small" onclick="copyLobbyCode()">Copy</button>
+      </div>
+
+      <div class="player-list" id="lobby-player-list"></div>
+
+      <button id="start-btn" class="btn primary large" onclick="doStartDraft()" style="display:none;">
+        Start Draft
+      </button>
+      <p id="lobby-status-text" class="hint"></p>
+    </div>
+  </div>
+
+  <!-- ═══════════ DRAFT SCREEN ═══════════ -->
+  <div id="draft-screen" class="screen">
+    <div id="turn-banner" class="turn-banner"></div>
+
+    <div class="draft-layout">
+      <main class="draft-main">
+        <div id="card-grid" class="card-grid"></div>
+      </main>
+      <aside class="draft-sidebar">
+        <h2>Draft Board</h2>
+        <div id="draft-board"></div>
+      </aside>
+    </div>
+  </div>
+
+  <!-- ═══════════ RESULTS SCREEN ═══════════ -->
+  <div id="results-screen" class="screen">
+    <header class="topbar">
+      <h1 class="logo-sm">Draft Complete!</h1>
+      <div class="topbar-right">
+        <button class="btn primary small" onclick="newDraft()">New Draft</button>
+      </div>
+    </header>
+
+    <div id="results-grid" class="results-grid"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

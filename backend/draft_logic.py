@@ -96,6 +96,31 @@ def name_to_edhrec_slug(name):
     return name
 
 
+def get_edhrec_top_commanders(period="year", count=100):
+    """
+    Fetches the top N commanders from EDHRec for a given time period.
+    Period options: 'year', 'month', 'week'
+    Returns (list of cardview dicts, error_string) — one will always be None.
+    Each cardview has: id (Scryfall ID), name, sanitized, rank, num_decks
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+    url = f"https://json.edhrec.com/pages/commanders/{period}.json"
+    try:
+        resp = requests.get(url, timeout=10, headers=headers)
+        if resp.status_code != 200:
+            return None, f"EDHRec returned status {resp.status_code}"
+        data = resp.json()
+        cardlists = data.get("container", {}).get("json_dict", {}).get("cardlists", [])
+        if not cardlists:
+            return None, "No commander data found in EDHRec response."
+        cardviews = cardlists[0].get("cardviews", [])
+        return cardviews[:count], None
+    except Exception as e:
+        return None, str(e)
+
+
 def get_edhrec_tags(card_name):
     """
     Fetches the top 3 archetype tags for a commander from EDHRec.

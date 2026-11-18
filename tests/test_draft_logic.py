@@ -1,4 +1,4 @@
-from draft_logic import get_diverse_pool, IDENTITY_MAP, name_to_edhrec_slug
+from backend.draft_logic import get_diverse_pool, IDENTITY_MAP, name_to_edhrec_slug
 
 # --- HELPER FUNCTION ---
 def make_card(name, rarity, identity, set_code="m21"):
