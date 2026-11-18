@@ -170,3 +170,25 @@ def test_snake_draft_order_with_four_players(client, cards, make_player):
             assert response.status_code == 200, f"pick{pick_number} should be allowed"
 
         assert response.json()["next_turn_user_id"] == alice.id
+
+
+def test_draft_completes_after_last_pick(client, cards, make_player):
+    alice = make_player("alice")
+    bob = make_player("bob")
+
+    state = start_draft(client, [alice, bob]) 
+
+    expected_order = [alice, bob, bob, alice, alice, bob, bob, alice, alice, bob]
+
+    for pick_number, player in enumerate(expected_order):
+        card_id = state["pool"][pick_number]["id"]
+        response = client.post(
+            f"/api/lobbies/{state['id']}/pick",
+            json={"card_id": card_id},
+            headers=player.headers,
+        
+        )
+        assert response.status_code == 200, f"pick{pick_number} should be allowed"
+    assert response.json()["draft_complete"] is True
+    lobby = client.get(f"/api/lobbies/{state['id']}", headers = alice.headers).json()
+    assert lobby["status"] == "completed"
