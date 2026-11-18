@@ -17,7 +17,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 
 from .config import settings
 
-db_url = settings.effective_database_url
+db_url = settings.database_url
 
 connect_args = {}
 if db_url.startswith("sqlite"):
