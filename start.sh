@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Startup script for production (Render, Railway, etc.)
 # Seeds the card database if empty, then starts the server.
 
 set -e
