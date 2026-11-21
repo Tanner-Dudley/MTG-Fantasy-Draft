@@ -16,12 +16,12 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .auth import clean_screen_name, create_access_token, get_current_user_id
 from .database import get_db, init_db
-from .models import Card, DraftPick, DraftPool, Lobby, LobbyUser, User
+from .models import Bot, Card, DraftPick, DraftPool, Lobby, LobbyUser, User
 from .schemas import (
     CardInfo,
     LobbyCreateRequest,
@@ -30,6 +30,7 @@ from .schemas import (
     PickRequest,
     PickResponse,
     PlayerInfo,
+    PracticeDraftRequest,
     SessionRequest,
     TokenResponse,
     UserResponse,
@@ -254,6 +255,54 @@ def join_lobby(
     return _build_lobby_state(db, lobby)
 
 
+@app.post("/api/practice", response_model=LobbyStateResponse)
+def create_practice_draft(
+    req: PracticeDraftRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Solo draft against bots: no room code, no waiting room.
+
+    You get a random seat, the other seats are bots, and the draft starts
+    immediately. If bots sit before you, they make their picks right away.
+    """
+    _get_user_or_401(db, user_id)
+
+    if not 2 <= req.num_players <= 12:
+        raise HTTPException(status_code=422, detail="num_players must be between 2 and 12")
+
+    lobby = Lobby(
+        code=_generate_lobby_code(db),
+        name="Practice Draft",
+        owner_id=user_id,
+        num_players_expected=req.num_players,
+    )
+    db.add(lobby)
+    db.flush()
+
+    your_seat = random.randrange(req.num_players)
+    bot_number = 1
+    for seat in range(req.num_players):
+        if seat == your_seat:
+            db.add(LobbyUser(lobby_id=lobby.id, user_id=user_id, seat_index=seat))
+            continue
+        bot = User(screen_name=f"Bot {bot_number}")
+        bot_number += 1
+        db.add(bot)
+        db.flush()
+        db.add(Bot(user_id=bot.id))
+        db.add(LobbyUser(lobby_id=lobby.id, user_id=bot.id, seat_index=seat))
+    db.flush()
+
+    _begin_draft(db, lobby, req.num_players)
+    db.flush()
+    _run_bot_turns(db, lobby)
+    db.commit()
+    db.refresh(lobby)
+
+    return _build_lobby_state(db, lobby)
+
+
 @app.get("/api/lobbies/{lobby_id}", response_model=LobbyStateResponse)
 def get_lobby(
     lobby_id: str,
@@ -296,6 +345,18 @@ def start_draft(
     if player_count < 2:
         raise HTTPException(status_code=400, detail="Need at least 2 players to start")
 
+    _begin_draft(db, lobby, player_count)
+    db.commit()
+    db.refresh(lobby)
+    return _build_lobby_state(db, lobby)
+
+
+def _begin_draft(db: Session, lobby: Lobby, player_count: int) -> None:
+    """Deal a random pool (5 cards per player) and flip the lobby to drafting.
+
+    Shared by the normal Start Draft button and practice drafts.
+    Does not commit -- the caller does.
+    """
     pool_size = player_count * 5
 
     total_cards = db.query(Card).count()
@@ -317,14 +378,11 @@ def start_draft(
     lobby.current_turn_index = 0
     lobby.direction = 1
     lobby.num_players_expected = player_count
-    db.commit()
-    db.refresh(lobby)
 
     logger.info(
         "Draft started in lobby %s with %d players, %d cards",
-        lobby_id, player_count, pool_size,
+        lobby.id, player_count, pool_size,
     )
-    return _build_lobby_state(db, lobby)
 
 
 @app.post("/api/lobbies/{lobby_id}/pick", response_model=PickResponse)
@@ -361,13 +419,35 @@ def make_pick(
     if already_picked:
         raise HTTPException(status_code=400, detail="Card has already been drafted")
 
+    _record_pick(db, lobby, user_id, req.card_id)
+    _run_bot_turns(db, lobby)
+
+    db.commit()
+    db.refresh(lobby)
+
+    current_player_ids = _player_ids_ordered(db, lobby.id)
+
+    return PickResponse(
+        status="ok",
+        draft_complete=lobby.status == "completed",
+        next_turn_user_id=current_player_ids[lobby.current_turn_index],
+    )
+
+
+def _record_pick(db: Session, lobby: Lobby, user_id: str, card_id: str) -> None:
+    """Save one pick and move the turn along the snake. Does not commit.
+
+    The caller has already checked that it's this player's turn and the card
+    is available.
+    """
+    player_ids = _player_ids_ordered(db, lobby.id)
     pick_number = (
         db.query(DraftPick).filter(DraftPick.lobby_id == lobby.id).count()
     )
     db.add(DraftPick(
         lobby_id=lobby.id,
         user_id=user_id,
-        card_id=req.card_id,
+        card_id=card_id,
         pick_number=pick_number,
     ))
 
@@ -389,18 +469,43 @@ def make_pick(
 
     if draft_complete:
         lobby.status = "completed"
-        logger.info("Draft completed in lobby %s", lobby_id)
+        logger.info("Draft completed in lobby %s", lobby.id)
 
-    db.commit()
-    db.refresh(lobby)
+    # Make the new pick and turn visible to the next query in this request
+    # (the session has autoflush off).
+    db.flush()
 
-    current_player_ids = _player_ids_ordered(db, lobby.id)
 
-    return PickResponse(
-        status="ok",
-        draft_complete=draft_complete,
-        next_turn_user_id=current_player_ids[lobby.current_turn_index],
-    )
+def _run_bot_turns(db: Session, lobby: Lobby) -> None:
+    """While it's a bot's turn, let it pick a random card still in the pool.
+
+    Runs right after a human pick (and when a practice draft starts), so by the
+    time the request returns it's the human's turn again or the draft is over.
+    """
+    bot_ids = {
+        row[0]
+        for row in db.query(Bot.user_id)
+        .join(LobbyUser, LobbyUser.user_id == Bot.user_id)
+        .filter(LobbyUser.lobby_id == lobby.id)
+        .all()
+    }
+    if not bot_ids:
+        return
+
+    player_ids = _player_ids_ordered(db, lobby.id)
+    while lobby.status == "drafting":
+        current = player_ids[lobby.current_turn_index]
+        if current not in bot_ids:
+            return
+
+        picked = select(DraftPick.card_id).where(DraftPick.lobby_id == lobby.id)
+        available = [
+            row[0]
+            for row in db.query(DraftPool.card_id)
+            .filter(DraftPool.lobby_id == lobby.id, DraftPool.card_id.not_in(picked))
+            .all()
+        ]
+        _record_pick(db, lobby, current, random.choice(available))
 
 
 @app.get("/api/lobbies/{lobby_id}/results", response_model=LobbyStateResponse)

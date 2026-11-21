@@ -147,6 +147,7 @@ form { display: flex; flex-direction: column; gap: 12px; }
   margin: 60px auto;
   padding: 0 24px;
 }
+.panel.wide { grid-column: 1 / -1; }
 .panel {
   background: var(--bg-panel);
   border: 1px solid var(--border);

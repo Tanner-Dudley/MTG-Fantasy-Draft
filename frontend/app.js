@@ -129,6 +129,23 @@ async function doJoinLobby(e) {
   }
 }
 
+async function doPracticeDraft(e) {
+  e.preventDefault();
+  try {
+    const lobby = await api("POST", "/practice", {
+      num_players: parseInt(document.getElementById("practice-players").value),
+    });
+    // Practice drafts skip the waiting room: they're already drafting.
+    state.lobby = lobby;
+    state.lobbyId = lobby.id;
+    localStorage.setItem("mtg_lobby_id", lobby.id);
+    navigate("draft-screen");
+    renderDraft();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════
    Lobby waiting room
    ═══════════════════════════════════════════════════════════════ */

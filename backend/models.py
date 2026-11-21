@@ -41,6 +41,18 @@ class User(Base):
     created_at = Column(DateTime, default=_utcnow)
 
 
+class Bot(Base):
+    """Marks a User row as a computer player (used in practice drafts).
+
+    This is its own table instead of an is_bot column on users on purpose:
+    init_db() only creates MISSING tables, it never alters existing ones, so a
+    new table deploys without touching the production database by hand.
+    """
+    __tablename__ = "bots"
+
+    user_id = Column(String, ForeignKey("users.id"), primary_key=True)
+
+
 class Lobby(Base):
     __tablename__ = "lobbies"
 
