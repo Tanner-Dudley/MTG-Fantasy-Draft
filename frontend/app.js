@@ -26,7 +26,7 @@ async function api(method, path, body) {
 
   if (!res.ok) {
     const msg = data?.detail || `Request failed (${res.status})`;
-    if (res.status === 401 && path !== "/login" && path !== "/register") {
+    if (res.status === 401 && path !== "/session") {
       doLogout();
     }
     throw new Error(msg);
@@ -58,49 +58,28 @@ function navigate(screenId) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   Auth
+   Screen name (guest session -- no account, no password)
    ═══════════════════════════════════════════════════════════════ */
 
-function switchAuthTab(tab) {
-  document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
-  document.getElementById("login-form").classList.toggle("hidden", tab !== "login");
-  document.getElementById("register-form").classList.toggle("hidden", tab !== "register");
-  event.target.classList.add("active");
-}
-
-async function doRegister(e) {
+async function doEnter(e) {
   e.preventDefault();
+  const screenName = document.getElementById("screen-name").value.trim();
   try {
-    const data = await api("POST", "/register", {
-      username: document.getElementById("reg-username").value,
-      password: document.getElementById("reg-password").value,
-      display_name: document.getElementById("reg-display").value,
-    });
+    const data = await api("POST", "/session", { screen_name: screenName });
     state.token = data.access_token;
     localStorage.setItem("mtg_token", state.token);
+    localStorage.setItem("mtg_last_name", screenName);
     state.user = await api("GET", "/me");
-    showToast("Account created!", "success");
     enterHome();
   } catch (err) {
     showToast(err.message);
   }
 }
 
-async function doLogin(e) {
-  e.preventDefault();
-  try {
-    const data = await api("POST", "/login", {
-      username: document.getElementById("login-username").value,
-      password: document.getElementById("login-password").value,
-    });
-    state.token = data.access_token;
-    localStorage.setItem("mtg_token", state.token);
-    state.user = await api("GET", "/me");
-    showToast(`Welcome back, ${state.user.display_name}!`, "success");
-    enterHome();
-  } catch (err) {
-    showToast(err.message);
-  }
+function showNameScreen() {
+  document.getElementById("screen-name").value =
+    localStorage.getItem("mtg_last_name") || "";
+  navigate("auth-screen");
 }
 
 function doLogout() {
@@ -111,7 +90,7 @@ function doLogout() {
   localStorage.removeItem("mtg_token");
   localStorage.removeItem("mtg_lobby_id");
   stopPoll();
-  navigate("auth-screen");
+  showNameScreen();
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -119,7 +98,7 @@ function doLogout() {
    ═══════════════════════════════════════════════════════════════ */
 
 function enterHome() {
-  document.getElementById("welcome-name").textContent = state.user.display_name;
+  document.getElementById("welcome-name").textContent = state.user.screen_name;
   navigate("home-screen");
 }
 
@@ -170,17 +149,21 @@ function renderLobby() {
   document.getElementById("lobby-title").textContent = lobby.name;
   document.getElementById("lobby-code-text").textContent = lobby.code;
   document.getElementById("lobby-welcome-name").textContent =
-    state.user?.display_name || "";
+    state.user?.screen_name || "";
 
   const listEl = document.getElementById("lobby-player-list");
-  listEl.innerHTML =
-    `<h3>Players (${lobby.players.length}/${lobby.num_players_expected})</h3>` +
-    lobby.players
-      .map(
-        (p) =>
-          `<div class="player-row${p.id === lobby.owner_id ? " owner" : ""}">${p.display_name}</div>`
-      )
-      .join("");
+  // Build with textContent, not innerHTML: screen names are user input,
+  // so a name like "<img onerror=...>" must show as text, not run as HTML.
+  listEl.innerHTML = "";
+  const heading = document.createElement("h3");
+  heading.textContent = `Players (${lobby.players.length}/${lobby.num_players_expected})`;
+  listEl.appendChild(heading);
+  lobby.players.forEach((p) => {
+    const row = document.createElement("div");
+    row.className = "player-row" + (p.id === lobby.owner_id ? " owner" : "");
+    row.textContent = p.screen_name;
+    listEl.appendChild(row);
+  });
 
   const isOwner = state.user && lobby.owner_id === state.user.id;
   const canStart = isOwner && lobby.players.length >= 2;
@@ -246,7 +229,7 @@ function renderDraft() {
     banner.textContent = "YOUR TURN — Pick a Commander!";
   } else {
     banner.className = "turn-banner waiting";
-    banner.textContent = `Waiting for ${turnPlayer?.display_name || "..."}`;
+    banner.textContent = `Waiting for ${turnPlayer?.screen_name || "..."}`;
   }
 
   const grid = document.getElementById("card-grid");
@@ -292,7 +275,7 @@ function renderDraftBoard() {
     section.className = "player-section" + (isActive ? " active" : "");
 
     const h3 = document.createElement("h3");
-    h3.textContent = player.display_name + (isActive ? " ◄" : "");
+    h3.textContent = player.screen_name + (isActive ? " ◄" : "");
     section.appendChild(h3);
 
     const ul = document.createElement("ul");
@@ -354,7 +337,7 @@ function renderResults() {
     card.className = "result-card";
 
     const h3 = document.createElement("h3");
-    h3.textContent = player.display_name;
+    h3.textContent = player.screen_name;
     card.appendChild(h3);
 
     const ul = document.createElement("ul");
@@ -442,7 +425,7 @@ async function pollLobby() {
 
 async function init() {
   if (!state.token) {
-    navigate("auth-screen");
+    showNameScreen();
     return;
   }
 

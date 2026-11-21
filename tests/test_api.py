@@ -192,3 +192,56 @@ def test_draft_completes_after_last_pick(client, cards, make_player):
     assert response.json()["draft_complete"] is True
     lobby = client.get(f"/api/lobbies/{state['id']}", headers = alice.headers).json()
     assert lobby["status"] == "completed"
+
+# ── Screen names ──────────────────────────────────────────────────────
+
+def test_session_rejects_blank_screen_name(client):
+    response = client.post("/api/session", json={"screen_name": "   "})
+    assert response.status_code == 422
+
+
+def test_session_trims_screen_name(client):
+    token = client.post("/api/session", json={"screen_name": "  alice  "}).json()["access_token"]
+    me = client.get("/api/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.json()["screen_name"] == "alice"
+
+
+def test_requests_without_a_token_get_401(client):
+    response = client.post("/api/lobbies", json={"name": "No Token", "num_players": 2})
+    assert response.status_code == 401
+
+
+def test_cannot_join_lobby_with_duplicate_screen_name(client, make_player):
+    alice = make_player("alice")
+    other_alice = make_player("ALICE")
+
+    lobby = client.post(
+        "/api/lobbies",
+        json={"name": "Test Lobby", "num_players": 4},
+        headers=alice.headers,
+    ).json()
+
+    response = client.post(
+        "/api/lobbies/join",
+        json={"lobby_code": lobby["code"]},
+        headers=other_alice.headers,
+    )
+    assert response.status_code == 409
+
+
+def test_same_screen_name_allowed_in_different_lobbies(client, make_player):
+    alice = make_player("alice")
+    bob = make_player("bob")
+    other_alice = make_player("alice")
+
+    client.post("/api/lobbies", json={"name": "Lobby 1", "num_players": 2}, headers=alice.headers)
+    lobby2 = client.post(
+        "/api/lobbies", json={"name": "Lobby 2", "num_players": 2}, headers=bob.headers
+    ).json()
+
+    response = client.post(
+        "/api/lobbies/join",
+        json={"lobby_code": lobby2["code"]},
+        headers=other_alice.headers,
+    )
+    assert response.status_code == 200

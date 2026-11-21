@@ -6,9 +6,9 @@ Each class defines:
   - Columns: the fields stored in each row
   - Relationships: convenient Python-level links between related tables
 
-When you do  db.query(User).filter(User.username == "alice").first()
-SQLAlchemy turns that into  SELECT * FROM users WHERE username = 'alice' LIMIT 1
-and returns a User object whose attributes are the column values.
+When you do  db.query(Lobby).filter(Lobby.code == "ABC123").first()
+SQLAlchemy turns that into  SELECT * FROM lobbies WHERE code = 'ABC123' LIMIT 1
+and returns a Lobby object whose attributes are the column values.
 """
 
 import uuid
@@ -29,12 +29,15 @@ def _utcnow() -> datetime:
 
 
 class User(Base):
+    """A guest player: just a screen name. No username, password or email.
+
+    Screen names are NOT unique site-wide -- two people can both be "Tanner".
+    They only have to be unique within a lobby (checked when joining).
+    """
     __tablename__ = "users"
 
     id = Column(String, primary_key=True, default=_new_uuid)
-    username = Column(String, unique=True, nullable=False, index=True)
-    display_name = Column(String, nullable=False)
-    password_hash = Column(String, nullable=False)
+    screen_name = Column(String, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
 
 

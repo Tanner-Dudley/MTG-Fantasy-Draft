@@ -11,28 +11,16 @@
   <!-- Toast notifications -->
   <div id="toast" class="toast"></div>
 
-  <!-- ═══════════ AUTH SCREEN ═══════════ -->
+  <!-- ═══════════ SCREEN NAME ═══════════ -->
   <div id="auth-screen" class="screen active">
     <div class="auth-card">
       <h1 class="logo">MTG Commander Draft</h1>
       <p class="hint">Snake-Draft Commander Cards With Your Friends</p>
-      <div class="tabs">
-        <button class="tab active" onclick="switchAuthTab('login')">Login</button>
-        <button class="tab" onclick="switchAuthTab('register')">Register</button>
-      </div>
-
-      <form id="login-form" onsubmit="doLogin(event)">
-        <input type="text" id="login-username" placeholder="Username" required autocomplete="username">
-        <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password">
-        <button type="submit" class="btn primary">Login</button>
-      </form>
-
-      <form id="register-form" class="hidden" onsubmit="doRegister(event)">
-        <input type="text" id="reg-username" placeholder="Username" required autocomplete="username">
-        <input type="text" id="reg-display" placeholder="Display Name" required>
-        <input type="password" id="reg-password" placeholder="Password" required autocomplete="new-password">
-        <p class="hint">Min 8 characters, 1 uppercase letter, 1 special character</p>
-        <button type="submit" class="btn primary">Create Account</button>
+      <form id="name-form" onsubmit="doEnter(event)">
+        <input type="text" id="screen-name" placeholder="Screen Name" required
+               minlength="2" maxlength="20" autocomplete="nickname">
+        <p class="hint">No account needed. Pick a name, then create or join a lobby.</p>
+        <button type="submit" class="btn primary">Continue</button>
       </form>
     </div>
   </div>
@@ -43,7 +31,7 @@
       <h1 class="logo-sm">MTG Commander Draft</h1>
       <div class="topbar-right">
         <span id="welcome-name"></span>
-        <button class="btn small" onclick="doLogout()">Logout</button>
+        <button class="btn small" onclick="doLogout()">Change Name</button>
       </div>
     </header>
 

@@ -9,7 +9,7 @@ A web app where Commander players run a snake draft of commanders with friends, 
 ## Features
 
 - Snake draft format (1-2-3-4-4-3-2-1)
-- Share a room code so friends can join your draft
+- No accounts: pick a screen name, then create a lobby or join one with its room code
 - Create a dynamic room size from 2 to 12 players
 - Draft from any legal commander in Magic's history
 - Ability to copy your choices and export as a decklist to popular deckbuilding websites such as Moxfield and Archidekt
@@ -125,7 +125,6 @@ CI runs the tests on every PR, if a test fails, it does not allow merging to mai
 
 ## What I'd improve
 
-- Changing the design from a Username / Password, to only screen names and room codes. This is to remove any personal data from needing to be stored and streamlining the process of initiating a draft
 - More features
     - More draft customization, limit by set, release year, color, and rarity
 - This app is a tool meant to be used by friends, and my local game store, so there is not a demand to scale. However, if I were to scale, I would move from Postgres to Amazon RDS for PostgreSQL. RDS handles automatic backups and patching, which protects against data loss, and its failover keeps a standby copy in another data center that takes over automatically, which removes the database as a single point of failure. I'd also replace the current polling with WebSockets.
