@@ -35,6 +35,10 @@ class LobbyCreateRequest(BaseModel):
     num_players: int = 4
 
 
+class PracticeDraftRequest(BaseModel):
+    num_players: int = 4
+
+
 class LobbyJoinRequest(BaseModel):
     lobby_code: str
 

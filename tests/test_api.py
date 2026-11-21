@@ -245,3 +245,87 @@ def test_same_screen_name_allowed_in_different_lobbies(client, make_player):
         headers=other_alice.headers,
     )
     assert response.status_code == 200
+
+
+# ── Practice drafts (solo vs bots) ────────────────────────────────────
+
+def start_practice(client, player, num_players):
+    response = client.post(
+        "/api/practice", json={"num_players": num_players}, headers=player.headers
+    )
+    assert response.status_code == 200
+    return response.json()
+
+
+def test_practice_draft_starts_on_your_turn(client, cards, make_player):
+    alice = make_player("alice")
+
+    state = start_practice(client, alice, 4)
+
+    assert state["status"] == "drafting"
+    assert len(state["players"]) == 4
+    assert len(state["pool"]) == 20
+    assert [p["screen_name"] for p in state["players"]].count("alice") == 1
+    # Any bots seated before alice have already picked; now it's her turn.
+    assert state["current_turn_user_id"] == alice.id
+
+
+def test_bots_pick_until_it_is_your_turn_again(client, cards, make_player):
+    alice = make_player("alice")
+    state = start_practice(client, alice, 3)
+
+    card_id = next(c["id"] for c in state["pool"] if not c["is_drafted"])
+    response = client.post(
+        f"/api/lobbies/{state['id']}/pick", json={"card_id": card_id}, headers=alice.headers
+    )
+
+    assert response.status_code == 200
+    assert response.json()["next_turn_user_id"] == alice.id
+
+
+def test_full_practice_draft_completes(client, cards, make_player):
+    alice = make_player("alice")
+    state = start_practice(client, alice, 4)
+
+    while state["status"] == "drafting":
+        card_id = next(c["id"] for c in state["pool"] if not c["is_drafted"])
+        response = client.post(
+            f"/api/lobbies/{state['id']}/pick", json={"card_id": card_id}, headers=alice.headers
+        )
+        assert response.status_code == 200
+        state = client.get(f"/api/lobbies/{state['id']}", headers=alice.headers).json()
+
+    assert state["status"] == "completed"
+    assert all(len(p["picks"]) == 5 for p in state["players"])
+    all_picks = [name for p in state["players"] for name in p["picks"]]
+    assert len(all_picks) == len(set(all_picks)), "no card should be drafted twice"
+
+
+def test_practice_draft_rejects_bad_table_size(client, make_player):
+    alice = make_player("alice")
+    response = client.post("/api/practice", json={"num_players": 1}, headers=alice.headers)
+    assert response.status_code == 422
+
+
+def test_cannot_join_a_practice_draft(client, cards, make_player):
+    alice = make_player("alice")
+    bob = make_player("bob")
+    state = start_practice(client, alice, 4)
+
+    response = client.post(
+        "/api/lobbies/join", json={"lobby_code": state["code"]}, headers=bob.headers
+    )
+    assert response.status_code == 400
+
+
+def test_bots_never_pick_in_a_normal_draft(client, cards, make_player):
+    alice = make_player("alice")
+    bob = make_player("bob")
+    state = start_draft(client, [alice, bob])
+
+    card_id = state["pool"][0]["id"]
+    response = client.post(
+        f"/api/lobbies/{state['id']}/pick", json={"card_id": card_id}, headers=alice.headers
+    )
+    # Bob is a human, so the turn stops on him instead of being auto-picked.
+    assert response.json()["next_turn_user_id"] == bob.id
