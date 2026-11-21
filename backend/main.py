@@ -16,15 +16,10 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from .auth import (
-    create_access_token,
-    get_current_user_id,
-    hash_password,
-    validate_password,
-    verify_password,
-)
+from .auth import clean_screen_name, create_access_token, get_current_user_id
 from .database import get_db, init_db
 from .models import Card, DraftPick, DraftPool, Lobby, LobbyUser, User
 from .schemas import (
@@ -32,11 +27,10 @@ from .schemas import (
     LobbyCreateRequest,
     LobbyJoinRequest,
     LobbyStateResponse,
-    LoginRequest,
     PickRequest,
     PickResponse,
     PlayerInfo,
-    RegisterRequest,
+    SessionRequest,
     TokenResponse,
     UserResponse,
 )
@@ -112,7 +106,7 @@ def _build_lobby_state(db: Session, lobby: Lobby) -> LobbyStateResponse:
         )
         pick_names = [p.card.name for p in picks]
         players.append(
-            PlayerInfo(id=uid, display_name=user.display_name, picks=pick_names)
+            PlayerInfo(id=uid, screen_name=user.screen_name, picks=pick_names)
         )
 
     current_turn_user_id = None
@@ -156,24 +150,13 @@ def _build_lobby_state(db: Session, lobby: Lobby) -> LobbyStateResponse:
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  AUTH ROUTES
+#  SESSION ROUTES
 # ══════════════════════════════════════════════════════════════════════
 
-@app.post("/api/register", response_model=TokenResponse)
-def register(req: RegisterRequest, db: Session = Depends(get_db)):
-    existing = db.query(User).filter(User.username == req.username.lower()).first()
-    if existing:
-        raise HTTPException(status_code=409, detail="Username already taken")
-
-    pw_error = validate_password(req.password)
-    if pw_error:
-        raise HTTPException(status_code=422, detail=pw_error)
-
-    user = User(
-        username=req.username.lower(),
-        display_name=req.display_name,
-        password_hash=hash_password(req.password),
-    )
+@app.post("/api/session", response_model=TokenResponse)
+def create_session(req: SessionRequest, db: Session = Depends(get_db)):
+    """Start a guest session: pick a screen name, get a token. No password."""
+    user = User(screen_name=clean_screen_name(req.screen_name))
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -181,19 +164,10 @@ def register(req: RegisterRequest, db: Session = Depends(get_db)):
     return TokenResponse(access_token=create_access_token(user.id))
 
 
-@app.post("/api/login", response_model=TokenResponse)
-def login(req: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == req.username.lower()).first()
-    if not user or not verify_password(req.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-
-    return TokenResponse(access_token=create_access_token(user.id))
-
-
 @app.get("/api/me", response_model=UserResponse)
 def get_me(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)):
     user = _get_user_or_401(db, user_id)
-    return UserResponse(id=user.id, username=user.username, display_name=user.display_name)
+    return UserResponse(id=user.id, screen_name=user.screen_name)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -233,9 +207,9 @@ def join_lobby(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    _get_user_or_401(db, user_id)
+    user = _get_user_or_401(db, user_id)
 
-    lobby = db.query(Lobby).filter(Lobby.code == req.lobby_code.upper()).first()
+    lobby = db.query(Lobby).filter(Lobby.code == req.lobby_code.strip().upper()).first()
     if not lobby:
         raise HTTPException(status_code=404, detail="Invalid lobby code")
 
@@ -255,6 +229,23 @@ def join_lobby(
     )
     if player_count >= lobby.num_players_expected:
         raise HTTPException(status_code=400, detail="Lobby is full")
+
+    # Screen names only need to be unique inside a lobby (case-insensitive),
+    # so the draft board never shows two players with the same name.
+    name_taken = (
+        db.query(LobbyUser)
+        .join(User, LobbyUser.user_id == User.id)
+        .filter(
+            LobbyUser.lobby_id == lobby.id,
+            func.lower(User.screen_name) == user.screen_name.lower(),
+        )
+        .first()
+    )
+    if name_taken:
+        raise HTTPException(
+            status_code=409,
+            detail=f'Someone in this lobby is already called "{user.screen_name}"',
+        )
 
     db.add(LobbyUser(lobby_id=lobby.id, user_id=user_id, seat_index=player_count))
     db.commit()

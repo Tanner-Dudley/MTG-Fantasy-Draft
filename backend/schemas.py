@@ -12,17 +12,10 @@ from __future__ import annotations
 from pydantic import BaseModel
 
 
-# ── Auth ──────────────────────────────────────────────────────────────
+# ── Session ─────────────────────────────────────────────────────────────
 
-class RegisterRequest(BaseModel):
-    username: str
-    password: str
-    display_name: str
-
-
-class LoginRequest(BaseModel):
-    username: str
-    password: str
+class SessionRequest(BaseModel):
+    screen_name: str
 
 
 class TokenResponse(BaseModel):
@@ -32,8 +25,7 @@ class TokenResponse(BaseModel):
 
 class UserResponse(BaseModel):
     id: str
-    username: str
-    display_name: str
+    screen_name: str
 
 
 # ── Lobby ─────────────────────────────────────────────────────────────
@@ -49,7 +41,7 @@ class LobbyJoinRequest(BaseModel):
 
 class PlayerInfo(BaseModel):
     id: str
-    display_name: str
+    screen_name: str
     picks: list[str]
 
 

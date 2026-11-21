@@ -55,11 +55,7 @@ def cards(engine):
 @pytest.fixture
 def make_player(client):
     def _make_player(name):
-        response = client.post(
-            "/api/register",
-            json={"username": name,
-                 "password": "Test-pass1", "display_name": name},
-        )
+        response = client.post("/api/session", json={"screen_name": name})
         assert response.status_code == 200
         headers = {"Authorization": f"Bearer {response.json() ['access_token']}"}
 
